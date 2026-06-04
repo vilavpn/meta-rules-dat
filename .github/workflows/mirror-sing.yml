@@ -1,0 +1,47 @@
+name: Mirror sing branch from upstream MetaCubeX
+
+# Install location: vilavpn/meta-rules-dat repo, path
+#   .github/workflows/mirror-sing.yml   (MUST be on the default branch `master`
+#   for the cron schedule to fire).
+#
+# Purpose: keep vilavpn/meta-rules-dat@sing in lockstep with upstream
+# MetaCubeX/meta-rules-dat@sing — the branch every VilaNet-series app fetches its
+# sing-box geo rule-sets from. Upstream rebuilds `sing` with non-fast-forwardable
+# history, so GitHub's native fork-sync (merge-upstream) fails; this force-pushes
+# the latest upstream snapshot (depth=1) instead, which also keeps the fork small.
+#
+# One-time setup after committing this file:
+#   1. Repo Settings > Actions > General: enable Actions (forks have them OFF by
+#      default), and allow workflows to run.
+#   2. (recommended) Disable the inherited upstream workflows `run.yml` and
+#      `delete.yml` so they don't fire unexpectedly once Actions are enabled.
+#   3. Run this workflow once from the Actions tab (workflow_dispatch) to sync now.
+# Uses the repo's own GITHUB_TOKEN (contents: write) — no PAT needed.
+
+on:
+  schedule:
+    - cron: '0 18 * * *'    # daily at 18:00 UTC
+  workflow_dispatch: {}      # manual run button in the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mirror-sing
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Force-push upstream sing -> fork sing (latest snapshot only)
+        run: |
+          set -euo pipefail
+          git init -q work && cd work
+          git remote add upstream https://github.com/MetaCubeX/meta-rules-dat.git
+          git fetch -q --depth=1 upstream sing
+          tip="$(git rev-parse --short FETCH_HEAD)"
+          git push -q --force \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
+            "FETCH_HEAD:refs/heads/sing"
+          echo "Mirrored upstream/sing -> sing @ ${tip}"
